@@ -1,9 +1,6 @@
 name: Public Tunnel Testing
 
-on:
-  workflow_dispatch:        # Trigger manual
-  push:
-    branches: [dev, staging]
+on: [push]
 
 jobs:
   test-with-tunnel:
