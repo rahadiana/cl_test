@@ -6,10 +6,6 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
 
-    # env:
-    #   ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}  # untuk opencode
-      # atau provider lain, misal: OPENAI_API_KEY, dll
-
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -17,38 +13,73 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'  # Node 20 LTS lebih stabil di CI vs 24
+          node-version: '20'
 
-      # Install 9router dan opencode
-      - name: Install tools
+      # ── Install tools ──────────────────────────────────────────
+      - name: Install 9router & opencode
         run: |
           npm install -g 9router opencode-ai@latest
 
-      # Jalankan 9router di background (port default 20128)
+      # ── Pre-configure direktori 9router ───────────────────────
+      - name: Pre-configure 9router
+        run: |
+          mkdir -p ~/.9router
+          ls -la ~/.9router/ || true
+
+      # ── Start 9router ──────────────────────────────────────────
       - name: Start 9router
         run: |
-          9router --no-browser &
-          echo "9router started"
+          9router --no-browser > /tmp/9router.log 2>&1 &
+          ROUTER_PID=$!
+          echo "ROUTER_PID=$ROUTER_PID" >> $GITHUB_ENV
+          echo "9router started with PID: $ROUTER_PID"
 
-      # Tunggu 9router ready
+      # ── Tunggu 9router ready ───────────────────────────────────
       - name: Wait for 9router ready
         run: |
-          for i in {1..20}; do
+          echo "Menunggu 9router di port 20128..."
+          for i in {1..25}; do
+            # Cek apakah proses masih hidup
+            if ! kill -0 $ROUTER_PID 2>/dev/null; then
+              echo "❌ 9router process sudah mati!"
+              echo "=== Log 9router ==="
+              cat /tmp/9router.log
+              exit 1
+            fi
+
             if curl -sf http://localhost:20128 > /dev/null 2>&1; then
-              echo "✅ 9router is up!"
+              echo "✅ 9router ready!"
               break
             fi
-            echo "Waiting... ($i/20)"
+
+            echo "Waiting... ($i/25)"
             sleep 3
           done
 
-      # Cek API endpoint 9router jalan
-      - name: Verify 9router API
-        run: |
-          curl -s http://localhost:20128/v1/models | head -c 200 || echo "API not ready yet"
+          echo ""
+          echo "=== Log 9router saat ini ==="
+          cat /tmp/9router.log
 
-      # Konfigurasi opencode pakai 9router sebagai provider
-      - name: Configure opencode to use 9router
+      # ── Debug: verifikasi semua berjalan ───────────────────────
+      - name: Debug - Verify 9router running
+        run: |
+          echo "=== Process list ==="
+          ps aux | grep 9router || echo "❌ Tidak ada proses 9router!"
+
+          echo ""
+          echo "=== Port yang listen ==="
+          ss -tlnp | grep 20128 || echo "❌ Port 20128 tidak listen!"
+
+          echo ""
+          echo "=== Test curl ke 9router ==="
+          curl -v http://localhost:20128 2>&1 | tail -30
+
+          echo ""
+          echo "=== Test API endpoint ==="
+          curl -s http://localhost:20128/v1/models 2>&1 | head -c 500 || echo "API belum ready"
+
+      # ── Configure opencode pakai 9router ──────────────────────
+      - name: Configure opencode
         run: |
           mkdir -p ~/.config/opencode
           cat > ~/.config/opencode/config.json << 'EOF'
@@ -70,48 +101,102 @@ jobs:
             }
           }
           EOF
+          echo "✅ opencode config selesai"
+          cat ~/.config/opencode/config.json
 
-      # Install cloudflared
+      # ── Install cloudflared ────────────────────────────────────
       - name: Install cloudflared
         run: |
           wget -q https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64.deb
           sudo dpkg -i cloudflared-linux-amd64.deb
+          cloudflared --version
 
-      # Start tunnel ke port 9router (20128)
+      # ── Start Cloudflare Tunnel ────────────────────────────────
       - name: Start Cloudflare Tunnel
         run: |
           cloudflared tunnel --url http://localhost:20128 \
             --no-autoupdate \
             --logfile /tmp/cloudflared.log &
 
-          # Tunggu URL muncul (lebih toleran)
-          for i in {1..20}; do
+          echo "Menunggu tunnel URL..."
+          TUNNEL_URL=""
+          for i in {1..30}; do
             TUNNEL_URL=$(grep -o 'https://[a-z0-9-]*\.trycloudflare\.com' /tmp/cloudflared.log 2>/dev/null | head -1)
             if [ -n "$TUNNEL_URL" ]; then
+              echo "✅ Tunnel URL ditemukan!"
               break
             fi
-            echo "Waiting for tunnel URL... ($i/20)"
+            echo "Waiting for URL... ($i/30)"
             sleep 3
           done
 
+          if [ -z "$TUNNEL_URL" ]; then
+            echo "❌ Tunnel URL tidak muncul! Log cloudflared:"
+            cat /tmp/cloudflared.log
+            exit 1
+          fi
+
           echo "========================================"
-          echo "🌐 PUBLIC URL: $TUNNEL_URL"
+          echo "🌐 PUBLIC URL  : $TUNNEL_URL"
           echo "📡 API Endpoint: $TUNNEL_URL/v1"
+          echo "🔑 API Key     : (lihat dashboard 9router)"
           echo "========================================"
           echo "TUNNEL_URL=$TUNNEL_URL" >> $GITHUB_ENV
 
-      # Test opencode non-interaktif (opsional)
-      - name: Test opencode run
+      # ── Verifikasi tunnel bisa diakses ─────────────────────────
+      - name: Verify tunnel accessible
         run: |
-          echo "Versi opencode:"
-          opencode --version || true
-          # Non-interaktif: opencode run "tulis hello world di python"
-          # Butuh provider yang sudah dikonfigurasi + koneksi ke 9router
+          echo "Test akses publik ke tunnel..."
+          sleep 5
+          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "$TUNNEL_URL" || echo "000")
+          echo "HTTP status: $HTTP_CODE"
 
-      # Keep alive
+          if [ "$HTTP_CODE" = "502" ]; then
+            echo ""
+            echo "❌ 502 Bad Gateway! Cek log:"
+            echo "=== 9router log ==="
+            cat /tmp/9router.log
+            echo ""
+            echo "=== cloudflared log ==="
+            cat /tmp/cloudflared.log | tail -20
+            echo ""
+            echo "=== Port check ==="
+            ss -tlnp | grep 20128
+          else
+            echo "✅ Tunnel OK! Status: $HTTP_CODE"
+          fi
+
+      # ── Test opencode version ──────────────────────────────────
+      - name: Test opencode
+        run: |
+          echo "=== opencode version ==="
+          opencode --version || true
+
+          echo ""
+          echo "=== opencode help ==="
+          opencode --help 2>&1 | head -20 || true
+
+      # ── Keep alive ─────────────────────────────────────────────
       - name: Keep tunnel alive (15 menit)
         run: |
-          echo "🚀 Tunnel aktif di: $TUNNEL_URL"
-          echo "🔌 Endpoint AI: $TUNNEL_URL/v1"
-          echo "Tekan 'Cancel workflow' di GitHub untuk stop"
-          sleep 900
+          echo "========================================"
+          echo "🚀 Tunnel aktif!"
+          echo "🌐 Public URL  : $TUNNEL_URL"
+          echo "📡 API Endpoint: $TUNNEL_URL/v1"
+          echo ""
+          echo "Cara pakai di tool AI (Claude Code, Cline, dll):"
+          echo "  Endpoint : $TUNNEL_URL/v1"
+          echo "  API Key  : buka $TUNNEL_URL → ambil dari dashboard"
+          echo "  Model    : kr/claude-sonnet-4.5"
+          echo ""
+          echo "Tekan 'Cancel workflow' di GitHub untuk stop."
+          echo "========================================"
+
+          # Print status setiap 5 menit
+          for i in 1 2 3; do
+            sleep 300
+            echo "⏱️  Menit ke-$((i*5)): tunnel masih aktif di $TUNNEL_URL"
+            curl -sf http://localhost:20128 > /dev/null 2>&1 && \
+              echo "  ✅ 9router: OK" || \
+              echo "  ❌ 9router: DOWN"
+          done
