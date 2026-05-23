@@ -16,6 +16,21 @@ jobs:
           curl -fsSL https://lmstudio.ai/install.sh | bash
           echo "$HOME/.lmstudio/bin" >> $GITHUB_PATH
 
+      # ── Download model dari HuggingFace ─────────────────────
+      - name: Download model (Qwen2.5 0.5B)
+        run: |
+          pip install huggingface-hub --break-system-packages
+
+          mkdir -p ~/.lmstudio/models/Qwen/Qwen2.5-0.5B-Instruct-GGUF
+
+          huggingface-cli download \
+            Qwen/Qwen2.5-0.5B-Instruct-GGUF \
+            qwen2.5-0.5b-instruct-q4_k_m.gguf \
+            --local-dir ~/.lmstudio/models/Qwen/Qwen2.5-0.5B-Instruct-GGUF
+
+          echo "✅ Model downloaded:"
+          ls -lh ~/.lmstudio/models/Qwen/Qwen2.5-0.5B-Instruct-GGUF/
+
       # ── Start llmster daemon ─────────────────────────────────
       - name: Start llmster daemon
         run: |
@@ -32,14 +47,19 @@ jobs:
           sleep 3
           lms server status || true
 
-      # ── (Opsional) Download model kecil ─────────────────────
-      # Uncomment salah satu — butuh ~500MB-2GB storage
-      # - name: Download model
-      #   run: |
-      #     export PATH="$PATH:$HOME/.lmstudio/bin"
-      #     # Pilih salah satu model kecil:
-      #     lms get lmstudio/qwen2.5-0.5b-instruct --yes || true
-      #     # lms get lmstudio/phi-3.1-mini-4k-instruct --yes || true
+      # ── Load model ke memory ─────────────────────────────────
+      - name: Load model
+        run: |
+          export PATH="$PATH:$HOME/.lmstudio/bin"
+
+          lms load \
+            Qwen/Qwen2.5-0.5B-Instruct-GGUF/qwen2.5-0.5b-instruct-q4_k_m.gguf \
+            --yes || true
+
+          sleep 5
+
+          echo "=== Models loaded ==="
+          lms ps || true
 
       # ── Verify LM Studio API ─────────────────────────────────
       - name: Wait for LM Studio API
@@ -48,13 +68,26 @@ jobs:
           for i in {1..20}; do
             if curl -sf http://localhost:1234/v1/models > /dev/null 2>&1; then
               echo "✅ LM Studio API ready!"
-              echo "Models tersedia:"
-              curl -s http://localhost:1234/v1/models
+              echo ""
+              echo "=== Models tersedia ==="
+              curl -s http://localhost:1234/v1/models | python3 -m json.tool
               break
             fi
             echo "Waiting... ($i/20)"
             sleep 3
           done
+
+      # ── Test chat ────────────────────────────────────────────
+      - name: Test chat API
+        run: |
+          echo "=== Test inferensi ==="
+          curl -s http://localhost:1234/v1/chat/completions \
+            -H "Content-Type: application/json" \
+            -d '{
+              "model": "qwen2.5-0.5b-instruct-q4_k_m",
+              "messages": [{"role": "user", "content": "say hello in one word"}],
+              "max_tokens": 20
+            }' | python3 -m json.tool || echo "Model belum siap atau nama model berbeda"
 
       # ── Start Open WebUI ─────────────────────────────────────
       - name: Start Open WebUI
@@ -70,15 +103,16 @@ jobs:
             ghcr.io/open-webui/open-webui:main
 
           echo "Menunggu Open WebUI di port 8080..."
-          for i in {1..30}; do
+          for i in {1..40}; do
             if curl -sf http://localhost:8080 > /dev/null 2>&1; then
               echo "✅ Open WebUI ready!"
               break
             fi
-            echo "Waiting... ($i/30)"
+            echo "Waiting... ($i/40)"
             sleep 5
           done
 
+          echo ""
           echo "=== Docker logs ==="
           docker logs open-webui --tail 20
 
@@ -88,7 +122,7 @@ jobs:
           wget -q https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64.deb
           sudo dpkg -i cloudflared-linux-amd64.deb
 
-      # ── Tunnel ke Open WebUI (port 8080) ────────────────────
+      # ── Tunnel ke Open WebUI (port 8080) ─────────────────────
       - name: Start Cloudflare Tunnel
         run: |
           cloudflared tunnel --url http://localhost:8080 \
@@ -97,7 +131,8 @@ jobs:
 
           TUNNEL_URL=""
           for i in {1..30}; do
-            TUNNEL_URL=$(grep -o 'https://[a-z0-9-]*\.trycloudflare\.com' /tmp/cloudflared.log 2>/dev/null | head -1)
+            TUNNEL_URL=$(grep -o 'https://[a-z0-9-]*\.trycloudflare\.com' \
+              /tmp/cloudflared.log 2>/dev/null | head -1)
             if [ -n "$TUNNEL_URL" ]; then
               echo "✅ Tunnel ready!"
               break
@@ -107,9 +142,10 @@ jobs:
           done
 
           echo "========================================"
-          echo "🌐 Open WebUI  : $TUNNEL_URL"
-          echo "📡 LM Studio   : $TUNNEL_URL/v1 (via WebUI)"
-          echo "🔓 Login       : tidak perlu (WEBUI_AUTH=false)"
+          echo "🌐 Open WebUI   : $TUNNEL_URL"
+          echo "📡 LM Studio API: $TUNNEL_URL/v1"
+          echo "🤖 Model        : qwen2.5-0.5b-instruct-q4_k_m"
+          echo "🔓 Login        : tidak perlu"
           echo "========================================"
           echo "TUNNEL_URL=$TUNNEL_URL" >> $GITHUB_ENV
 
@@ -117,25 +153,25 @@ jobs:
       - name: Keep alive (15 menit)
         run: |
           echo "========================================"
-          echo "🌐 Buka di browser: $TUNNEL_URL"
+          echo "🌐 Buka di browser : $TUNNEL_URL"
+          echo "🤖 Model siap      : qwen2.5-0.5b-instruct-q4_k_m"
           echo ""
-          echo "Cara pakai:"
-          echo "  1. Buka $TUNNEL_URL di browser"
-          echo "  2. Langsung bisa chat (no login)"
-          echo "  3. Pilih model di dropdown (kiri atas)"
+          echo "Setting di opencode / Claude Code / Cursor:"
+          echo "  Base URL : $TUNNEL_URL/v1"
+          echo "  API Key  : lm-studio"
+          echo "  Model    : qwen2.5-0.5b-instruct-q4_k_m"
           echo ""
-          echo "Kalau mau tambah model:"
-          echo "  → Settings → Models → Pull dari Ollama"
-          echo "  → Atau uncomment Download model di workflow"
+          echo "Tekan Cancel workflow untuk stop."
           echo "========================================"
 
           for i in 1 2 3; do
             sleep 300
+            echo ""
             echo "⏱️ Menit ke-$((i*5)) — $TUNNEL_URL"
             curl -sf http://localhost:8080 > /dev/null && \
-              echo "  ✅ Open WebUI: OK" || \
-              echo "  ❌ Open WebUI: DOWN"
+              echo "  ✅ Open WebUI : OK" || \
+              echo "  ❌ Open WebUI : DOWN"
             curl -sf http://localhost:1234/v1/models > /dev/null && \
-              echo "  ✅ LM Studio : OK" || \
-              echo "  ❌ LM Studio : DOWN"
+              echo "  ✅ LM Studio  : OK" || \
+              echo "  ❌ LM Studio  : DOWN"
           done
