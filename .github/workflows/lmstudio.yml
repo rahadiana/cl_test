@@ -20,17 +20,17 @@ jobs:
       - name: Download model (Qwen2.5 0.5B)
         run: |
           pip install huggingface-hub --break-system-packages
-
+      
           mkdir -p ~/.lmstudio/models/Qwen/Qwen2.5-0.5B-Instruct-GGUF
-
-          huggingface-cli download \
+      
+          hf download \
             Qwen/Qwen2.5-0.5B-Instruct-GGUF \
             qwen2.5-0.5b-instruct-q4_k_m.gguf \
             --local-dir ~/.lmstudio/models/Qwen/Qwen2.5-0.5B-Instruct-GGUF
-
+      
           echo "✅ Model downloaded:"
           ls -lh ~/.lmstudio/models/Qwen/Qwen2.5-0.5B-Instruct-GGUF/
-
+          
       # ── Start llmster daemon ─────────────────────────────────
       - name: Start llmster daemon
         run: |
