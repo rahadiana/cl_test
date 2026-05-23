@@ -26,7 +26,7 @@ jobs:
 
       # --- Jalankan app di background ---
       - name: Start app
-        run: npx 9router #node index.js &        # Ganti sesuai cara start app kamu
+        run: npx 9router & #node index.js &        # Ganti sesuai cara start app kamu
 
       - name: Wait for app ready
         run: |
