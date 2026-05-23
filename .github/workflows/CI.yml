@@ -29,7 +29,7 @@ jobs:
       # ── Start 9router ──────────────────────────────────────────
       - name: Start 9router
         run: |
-          npx 9router > /tmp/9router.log 2>&1 &
+          9router --no-browser --skip-update
           ROUTER_PID=$!
           echo "ROUTER_PID=$ROUTER_PID" >> $GITHUB_ENV
           echo "9router started with PID: $ROUTER_PID"
