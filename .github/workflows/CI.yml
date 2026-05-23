@@ -1,66 +1,117 @@
 name: Public Tunnel Testing
-
 on: [push]
 
 jobs:
   test-with-tunnel:
     runs-on: ubuntu-latest
-    timeout-minutes: 30     # Batas waktu agar tidak makan kuota
+    timeout-minutes: 30
+
+    # env:
+    #   ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}  # untuk opencode
+      # atau provider lain, misal: OPENAI_API_KEY, dll
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # --- Install app dependencies (sesuaikan) ---
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '24'
+          node-version: '20'  # Node 20 LTS lebih stabil di CI vs 24
 
-      - name: Install dependencies
+      # Install 9router dan opencode
+      - name: Install tools
         run: |
-          npm init -y
-          # npm install express
-          npm i -g opencode-ai
-          npm install -g 9router
+          npm install -g 9router opencode-ai@latest
 
-      # --- Jalankan app di background ---
-      - name: Start app
-        run: npx 9router & #node index.js &        # Ganti sesuai cara start app kamu
-
-      - name: Wait for app ready
+      # Jalankan 9router di background (port default 20128)
+      - name: Start 9router
         run: |
-          for i in {1..15}; do
-            curl -s http://localhost:2128 && break
-            echo "Waiting... ($i)"
-            sleep 2
+          9router --no-browser &
+          echo "9router started"
+
+      # Tunggu 9router ready
+      - name: Wait for 9router ready
+        run: |
+          for i in {1..20}; do
+            if curl -sf http://localhost:20128 > /dev/null 2>&1; then
+              echo "✅ 9router is up!"
+              break
+            fi
+            echo "Waiting... ($i/20)"
+            sleep 3
           done
 
-      # --- Install & jalankan cloudflared ---
+      # Cek API endpoint 9router jalan
+      - name: Verify 9router API
+        run: |
+          curl -s http://localhost:20128/v1/models | head -c 200 || echo "API not ready yet"
+
+      # Konfigurasi opencode pakai 9router sebagai provider
+      - name: Configure opencode to use 9router
+        run: |
+          mkdir -p ~/.config/opencode
+          cat > ~/.config/opencode/config.json << 'EOF'
+          {
+            "$schema": "https://opencode.ai/config.json",
+            "provider": {
+              "@ai-sdk/openai-compatible": {
+                "name": "9router",
+                "options": {
+                  "baseURL": "http://localhost:20128/v1",
+                  "apiKey": "local"
+                },
+                "models": {
+                  "kr/claude-sonnet-4.5": {
+                    "name": "Claude via 9router"
+                  }
+                }
+              }
+            }
+          }
+          EOF
+
+      # Install cloudflared
       - name: Install cloudflared
         run: |
           wget -q https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64.deb
           sudo dpkg -i cloudflared-linux-amd64.deb
 
+      # Start tunnel ke port 9router (20128)
       - name: Start Cloudflare Tunnel
         run: |
-          cloudflared tunnel --url http://localhost:2128 \
+          cloudflared tunnel --url http://localhost:20128 \
             --no-autoupdate \
             --logfile /tmp/cloudflared.log &
-          
-          # Tunggu URL muncul di log
-          sleep 5
-          TUNNEL_URL=$(grep -o 'https://[a-z0-9-]*\.trycloudflare\.com' /tmp/cloudflared.log | head -1)
-          
+
+          # Tunggu URL muncul (lebih toleran)
+          for i in {1..20}; do
+            TUNNEL_URL=$(grep -o 'https://[a-z0-9-]*\.trycloudflare\.com' /tmp/cloudflared.log 2>/dev/null | head -1)
+            if [ -n "$TUNNEL_URL" ]; then
+              break
+            fi
+            echo "Waiting for tunnel URL... ($i/20)"
+            sleep 3
+          done
+
           echo "========================================"
           echo "🌐 PUBLIC URL: $TUNNEL_URL"
+          echo "📡 API Endpoint: $TUNNEL_URL/v1"
           echo "========================================"
           echo "TUNNEL_URL=$TUNNEL_URL" >> $GITHUB_ENV
 
+      # Test opencode non-interaktif (opsional)
+      - name: Test opencode run
+        run: |
+          echo "Versi opencode:"
+          opencode --version || true
+          # Non-interaktif: opencode run "tulis hello world di python"
+          # Butuh provider yang sudah dikonfigurasi + koneksi ke 9router
 
+      # Keep alive
       - name: Keep tunnel alive (15 menit)
         run: |
-          echo "Tunnel aktif di: $TUNNEL_URL"
-          echo "Tekan Cancel job di GitHub untuk menghentikan"
-          sleep 900  # 15 menit
-
+          echo "🚀 Tunnel aktif di: $TUNNEL_URL"
+          echo "🔌 Endpoint AI: $TUNNEL_URL/v1"
+          echo "Tekan 'Cancel workflow' di GitHub untuk stop"
+          sleep 900
