@@ -4,34 +4,91 @@ on: [push]
 jobs:
   lmstudio-webui:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 360
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # ── Install LM Studio (llmster) ──────────────────────────
-      - name: Install LM Studio
+      # ── Cek disk awal ────────────────────────────────────────
+      - name: Check disk space
         run: |
+          echo "=== Disk awal ==="
+          df -h /
+          echo ""
+          echo "=== RAM ==="
+          free -h
+
+      # ── Install tools ────────────────────────────────────────
+      - name: Install dependencies
+        run: |
+          pip install huggingface-hub --break-system-packages
           curl -fsSL https://lmstudio.ai/install.sh | bash
           echo "$HOME/.lmstudio/bin" >> $GITHUB_PATH
 
-      # ── Download model dari HuggingFace ─────────────────────
-      - name: Download model (Qwen2.5 0.5B)
+      # ── Download semua model ─────────────────────────────────
+      - name: Download Model 1 - Qwen2.5 7B (4.7GB)
         run: |
-          pip install huggingface-hub --break-system-packages
-      
+          mkdir -p ~/.lmstudio/models/Qwen/Qwen2.5-7B-Instruct-GGUF
+          hf download \
+            Qwen/Qwen2.5-7B-Instruct-GGUF \
+            qwen2.5-7b-instruct-q4_k_m.gguf \
+            --local-dir ~/.lmstudio/models/Qwen/Qwen2.5-7B-Instruct-GGUF
+          echo "✅ Model 1 selesai"
+          df -h / | tail -1
+
+      - name: Download Model 2 - Phi-3.5 Mini (2.2GB)
+        run: |
+          mkdir -p ~/.lmstudio/models/microsoft/Phi-3.5-mini-instruct-GGUF
+          hf download \
+            microsoft/Phi-3.5-mini-instruct-gguf \
+            Phi-3.5-mini-instruct-Q4_K_M.gguf \
+            --local-dir ~/.lmstudio/models/microsoft/Phi-3.5-mini-instruct-GGUF
+          echo "✅ Model 2 selesai"
+          df -h / | tail -1
+
+      - name: Download Model 3 - Llama-3.2 3B (1.9GB)
+        run: |
+          mkdir -p ~/.lmstudio/models/meta-llama/Llama-3.2-3B-Instruct-GGUF
+          hf download \
+            meta-llama/Llama-3.2-3B-Instruct-GGUF \
+            llama-3.2-3b-instruct-q4_k_m.gguf \
+            --local-dir ~/.lmstudio/models/meta-llama/Llama-3.2-3B-Instruct-GGUF
+          echo "✅ Model 3 selesai"
+          df -h / | tail -1
+
+      - name: Download Model 4 - Gemma-2 2B (1.6GB)
+        run: |
+          mkdir -p ~/.lmstudio/models/google/gemma-2-2b-it-GGUF
+          hf download \
+            google/gemma-2-2b-it-GGUF \
+            gemma-2-2b-it-Q4_K_M.gguf \
+            --local-dir ~/.lmstudio/models/google/gemma-2-2b-it-GGUF
+          echo "✅ Model 4 selesai"
+          df -h / | tail -1
+
+      - name: Download Model 5 - Qwen2.5 0.5B (0.4GB)
+        run: |
           mkdir -p ~/.lmstudio/models/Qwen/Qwen2.5-0.5B-Instruct-GGUF
-      
           hf download \
             Qwen/Qwen2.5-0.5B-Instruct-GGUF \
             qwen2.5-0.5b-instruct-q4_k_m.gguf \
             --local-dir ~/.lmstudio/models/Qwen/Qwen2.5-0.5B-Instruct-GGUF
-      
-          echo "✅ Model downloaded:"
-          ls -lh ~/.lmstudio/models/Qwen/Qwen2.5-0.5B-Instruct-GGUF/
-          
-      # ── Start llmster daemon ─────────────────────────────────
+          echo "✅ Model 5 selesai"
+          df -h / | tail -1
+
+      # ── Cek disk setelah download ────────────────────────────
+      - name: Check disk after download
+        run: |
+          echo "=== Disk setelah download ==="
+          df -h /
+          echo ""
+          echo "=== Semua model ==="
+          du -sh ~/.lmstudio/models/*/* 2>/dev/null
+          echo ""
+          du -sh ~/.lmstudio/models/ 2>/dev/null
+
+      # ── Start LM Studio ──────────────────────────────────────
       - name: Start llmster daemon
         run: |
           export PATH="$PATH:$HOME/.lmstudio/bin"
@@ -39,7 +96,6 @@ jobs:
           sleep 5
           lms status || true
 
-      # ── Start LM Studio API server (port 1234) ───────────────
       - name: Start LM Studio API server
         run: |
           export PATH="$PATH:$HOME/.lmstudio/bin"
@@ -47,47 +103,31 @@ jobs:
           sleep 3
           lms server status || true
 
-      # ── Load model ke memory ─────────────────────────────────
-      - name: Load model
+      # ── Load model default (yang kecil dulu) ─────────────────
+      - name: Load default model (Qwen2.5 0.5B)
         run: |
           export PATH="$PATH:$HOME/.lmstudio/bin"
-
           lms load \
             Qwen/Qwen2.5-0.5B-Instruct-GGUF/qwen2.5-0.5b-instruct-q4_k_m.gguf \
             --yes || true
-
           sleep 5
-
-          echo "=== Models loaded ==="
+          echo "=== Loaded models ==="
           lms ps || true
 
-      # ── Verify LM Studio API ─────────────────────────────────
+      # ── Verify API ───────────────────────────────────────────
       - name: Wait for LM Studio API
         run: |
-          echo "Menunggu LM Studio di port 1234..."
           for i in {1..20}; do
             if curl -sf http://localhost:1234/v1/models > /dev/null 2>&1; then
               echo "✅ LM Studio API ready!"
               echo ""
-              echo "=== Models tersedia ==="
+              echo "=== Models di API ==="
               curl -s http://localhost:1234/v1/models | python3 -m json.tool
               break
             fi
             echo "Waiting... ($i/20)"
             sleep 3
           done
-
-      # ── Test chat ────────────────────────────────────────────
-      - name: Test chat API
-        run: |
-          echo "=== Test inferensi ==="
-          curl -s http://localhost:1234/v1/chat/completions \
-            -H "Content-Type: application/json" \
-            -d '{
-              "model": "qwen2.5-0.5b-instruct-q4_k_m",
-              "messages": [{"role": "user", "content": "say hello in one word"}],
-              "max_tokens": 20
-            }' | python3 -m json.tool || echo "Model belum siap atau nama model berbeda"
 
       # ── Start Open WebUI ─────────────────────────────────────
       - name: Start Open WebUI
@@ -102,7 +142,7 @@ jobs:
             -v open-webui:/app/backend/data \
             ghcr.io/open-webui/open-webui:main
 
-          echo "Menunggu Open WebUI di port 8080..."
+          echo "Menunggu Open WebUI..."
           for i in {1..40}; do
             if curl -sf http://localhost:8080 > /dev/null 2>&1; then
               echo "✅ Open WebUI ready!"
@@ -111,10 +151,7 @@ jobs:
             echo "Waiting... ($i/40)"
             sleep 5
           done
-
-          echo ""
-          echo "=== Docker logs ==="
-          docker logs open-webui --tail 20
+          docker logs open-webui --tail 10
 
       # ── Install cloudflared ──────────────────────────────────
       - name: Install cloudflared
@@ -122,7 +159,7 @@ jobs:
           wget -q https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64.deb
           sudo dpkg -i cloudflared-linux-amd64.deb
 
-      # ── Tunnel ke Open WebUI (port 8080) ─────────────────────
+      # ── Start Tunnel ─────────────────────────────────────────
       - name: Start Cloudflare Tunnel
         run: |
           cloudflared tunnel --url http://localhost:8080 \
@@ -137,37 +174,44 @@ jobs:
               echo "✅ Tunnel ready!"
               break
             fi
-            echo "Waiting for URL... ($i/30)"
+            echo "Waiting... ($i/30)"
             sleep 3
           done
 
           echo "========================================"
           echo "🌐 Open WebUI   : $TUNNEL_URL"
-          echo "📡 LM Studio API: $TUNNEL_URL/v1"
-          echo "🤖 Model        : qwen2.5-0.5b-instruct-q4_k_m"
+          echo "📡 API Endpoint : $TUNNEL_URL/v1"
           echo "🔓 Login        : tidak perlu"
+          echo ""
+          echo "📦 Model tersedia (ganti di WebUI):"
+          echo "  1. qwen2.5-7b-instruct-q4_k_m     (4.7GB) ← terbaik"
+          echo "  2. Phi-3.5-mini-instruct-Q4_K_M    (2.2GB)"
+          echo "  3. llama-3.2-3b-instruct-q4_k_m   (1.9GB)"
+          echo "  4. gemma-2-2b-it-Q4_K_M            (1.6GB)"
+          echo "  5. qwen2.5-0.5b-instruct-q4_k_m   (0.4GB) ← aktif"
           echo "========================================"
           echo "TUNNEL_URL=$TUNNEL_URL" >> $GITHUB_ENV
 
       # ── Keep alive ───────────────────────────────────────────
-      - name: Keep alive (15 menit)
+      - name: Keep alive (5 jam)
         run: |
           echo "========================================"
           echo "🌐 Buka di browser : $TUNNEL_URL"
-          echo "🤖 Model siap      : qwen2.5-0.5b-instruct-q4_k_m"
           echo ""
-          echo "Setting di opencode / Claude Code / Cursor:"
-          echo "  Base URL : $TUNNEL_URL/v1"
-          echo "  API Key  : lm-studio"
-          echo "  Model    : qwen2.5-0.5b-instruct-q4_k_m"
+          echo "💡 Cara ganti model di Open WebUI:"
+          echo "   Klik nama model di kiri atas → pilih model lain"
           echo ""
-          echo "Tekan Cancel workflow untuk stop."
+          echo "💡 Cara load model berbeda via CLI:"
+          echo "   lms unload --all"
+          echo "   lms load Qwen/Qwen2.5-7B-Instruct-GGUF/qwen2.5-7b-instruct-q4_k_m.gguf"
           echo "========================================"
 
-          for i in 1 2 3; do
+          for i in $(seq 1 60); do
             sleep 300
             echo ""
             echo "⏱️ Menit ke-$((i*5)) — $TUNNEL_URL"
+            df -h / | tail -1
+            free -h | grep Mem
             curl -sf http://localhost:8080 > /dev/null && \
               echo "  ✅ Open WebUI : OK" || \
               echo "  ❌ Open WebUI : DOWN"
