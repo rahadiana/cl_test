@@ -1,8 +1,8 @@
-name: LM Studio + Tunnel
+name: LM Studio + Open WebUI + Tunnel
 on: [push]
 
 jobs:
-  lmstudio-tunnel:
+  lmstudio-webui:
     runs-on: ubuntu-latest
     timeout-minutes: 30
 
@@ -16,49 +16,71 @@ jobs:
           curl -fsSL https://lmstudio.ai/install.sh | bash
           echo "$HOME/.lmstudio/bin" >> $GITHUB_PATH
 
-      - name: Verify lms CLI
-        run: |
-          export PATH="$PATH:$HOME/.lmstudio/bin"
-          lms --version || lms version || true
-
       # ── Start llmster daemon ─────────────────────────────────
       - name: Start llmster daemon
         run: |
           export PATH="$PATH:$HOME/.lmstudio/bin"
           lms daemon up &
           sleep 5
-          echo "=== daemon status ==="
           lms status || true
 
       # ── Start LM Studio API server (port 1234) ───────────────
-      - name: Start LM Studio server
+      - name: Start LM Studio API server
         run: |
           export PATH="$PATH:$HOME/.lmstudio/bin"
           lms server start
           sleep 3
-          echo "=== server status ==="
           lms server status || true
 
-      # ── (Opsional) Download model kecil untuk test ───────────
-      # Uncomment kalau mau download model — butuh ~2GB storage
-      # - name: Download small model
+      # ── (Opsional) Download model kecil ─────────────────────
+      # Uncomment salah satu — butuh ~500MB-2GB storage
+      # - name: Download model
       #   run: |
       #     export PATH="$PATH:$HOME/.lmstudio/bin"
-      #     lms get lmstudio/qwen2.5-0.5b-instruct-mlx --yes || true
+      #     # Pilih salah satu model kecil:
+      #     lms get lmstudio/qwen2.5-0.5b-instruct --yes || true
+      #     # lms get lmstudio/phi-3.1-mini-4k-instruct --yes || true
 
-      # ── Verify API jalan di port 1234 ───────────────────────
-      - name: Wait for LM Studio API ready
+      # ── Verify LM Studio API ─────────────────────────────────
+      - name: Wait for LM Studio API
         run: |
-          echo "Menunggu LM Studio API di port 1234..."
+          echo "Menunggu LM Studio di port 1234..."
           for i in {1..20}; do
             if curl -sf http://localhost:1234/v1/models > /dev/null 2>&1; then
               echo "✅ LM Studio API ready!"
-              curl -s http://localhost:1234/v1/models | head -c 300
+              echo "Models tersedia:"
+              curl -s http://localhost:1234/v1/models
               break
             fi
             echo "Waiting... ($i/20)"
             sleep 3
           done
+
+      # ── Start Open WebUI ─────────────────────────────────────
+      - name: Start Open WebUI
+        run: |
+          docker run -d \
+            --name open-webui \
+            --network host \
+            -e OPENAI_API_BASE_URL=http://localhost:1234/v1 \
+            -e OPENAI_API_KEY=lm-studio \
+            -e WEBUI_SECRET_KEY=ci-secret-key-12345 \
+            -e WEBUI_AUTH=false \
+            -v open-webui:/app/backend/data \
+            ghcr.io/open-webui/open-webui:main
+
+          echo "Menunggu Open WebUI di port 8080..."
+          for i in {1..30}; do
+            if curl -sf http://localhost:8080 > /dev/null 2>&1; then
+              echo "✅ Open WebUI ready!"
+              break
+            fi
+            echo "Waiting... ($i/30)"
+            sleep 5
+          done
+
+          echo "=== Docker logs ==="
+          docker logs open-webui --tail 20
 
       # ── Install cloudflared ──────────────────────────────────
       - name: Install cloudflared
@@ -66,10 +88,10 @@ jobs:
           wget -q https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64.deb
           sudo dpkg -i cloudflared-linux-amd64.deb
 
-      # ── Tunnel ke LM Studio port 1234 ───────────────────────
+      # ── Tunnel ke Open WebUI (port 8080) ────────────────────
       - name: Start Cloudflare Tunnel
         run: |
-          cloudflared tunnel --url http://localhost:1234 \
+          cloudflared tunnel --url http://localhost:8080 \
             --no-autoupdate \
             --logfile /tmp/cloudflared.log &
 
@@ -85,27 +107,35 @@ jobs:
           done
 
           echo "========================================"
-          echo "🌐 LM Studio URL : $TUNNEL_URL"
-          echo "📡 API Endpoint  : $TUNNEL_URL/v1"
-          echo "📋 List Models   : $TUNNEL_URL/v1/models"
+          echo "🌐 Open WebUI  : $TUNNEL_URL"
+          echo "📡 LM Studio   : $TUNNEL_URL/v1 (via WebUI)"
+          echo "🔓 Login       : tidak perlu (WEBUI_AUTH=false)"
           echo "========================================"
           echo "TUNNEL_URL=$TUNNEL_URL" >> $GITHUB_ENV
 
       # ── Keep alive ───────────────────────────────────────────
       - name: Keep alive (15 menit)
         run: |
-          echo "🚀 LM Studio aktif di: $TUNNEL_URL"
+          echo "========================================"
+          echo "🌐 Buka di browser: $TUNNEL_URL"
           echo ""
-          echo "Pakai di opencode / Claude Code / Cursor:"
-          echo "  Base URL : $TUNNEL_URL/v1"
-          echo "  API Key  : lm-studio (atau apa saja)"
-          echo "  Model    : (lihat $TUNNEL_URL/v1/models)"
+          echo "Cara pakai:"
+          echo "  1. Buka $TUNNEL_URL di browser"
+          echo "  2. Langsung bisa chat (no login)"
+          echo "  3. Pilih model di dropdown (kiri atas)"
           echo ""
-          echo "Tekan Cancel workflow untuk stop."
+          echo "Kalau mau tambah model:"
+          echo "  → Settings → Models → Pull dari Ollama"
+          echo "  → Atau uncomment Download model di workflow"
+          echo "========================================"
+
           for i in 1 2 3; do
             sleep 300
-            echo "⏱️ Menit ke-$((i*5)) — aktif: $TUNNEL_URL"
+            echo "⏱️ Menit ke-$((i*5)) — $TUNNEL_URL"
+            curl -sf http://localhost:8080 > /dev/null && \
+              echo "  ✅ Open WebUI: OK" || \
+              echo "  ❌ Open WebUI: DOWN"
             curl -sf http://localhost:1234/v1/models > /dev/null && \
-              echo "  ✅ LM Studio: OK" || \
-              echo "  ❌ LM Studio: DOWN"
+              echo "  ✅ LM Studio : OK" || \
+              echo "  ❌ LM Studio : DOWN"
           done
