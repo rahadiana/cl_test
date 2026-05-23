@@ -26,68 +26,60 @@ jobs:
           curl -fsSL https://lmstudio.ai/install.sh | bash
           echo "$HOME/.lmstudio/bin" >> $GITHUB_PATH
 
-      # ── Download semua model ─────────────────────────────────
-      - name: Download Model 1 - Qwen2.5 7B (4.7GB)
+      - name: Download Model 1 - Qwen2.5 7B (4.68GB)
         run: |
-          mkdir -p ~/.lmstudio/models/Qwen/Qwen2.5-7B-Instruct-GGUF
-          hf download \
-            Qwen/Qwen2.5-7B-Instruct-GGUF \
-            qwen2.5-7b-instruct-q4_k_m.gguf \
-            --local-dir ~/.lmstudio/models/Qwen/Qwen2.5-7B-Instruct-GGUF
+          mkdir -p ~/.lmstudio/models/bartowski/Qwen2.5-7B-Instruct-GGUF
+          hf download bartowski/Qwen2.5-7B-Instruct-GGUF \
+            --include "Qwen2.5-7B-Instruct-Q4_K_M.gguf" \
+            --local-dir ~/.lmstudio/models/bartowski/Qwen2.5-7B-Instruct-GGUF
           echo "✅ Model 1 selesai"
           df -h / | tail -1
-
-      - name: Download Model 2 - Phi-3.5 Mini (2.2GB)
+      
+      - name: Download Model 2 - Llama-3.2 3B (2.02GB)
         run: |
-          mkdir -p ~/.lmstudio/models/microsoft/Phi-3.5-mini-instruct-GGUF
-          hf download \
-            microsoft/Phi-3.5-mini-instruct-gguf \
-            Phi-3.5-mini-instruct-Q4_K_M.gguf \
-            --local-dir ~/.lmstudio/models/microsoft/Phi-3.5-mini-instruct-GGUF
+          mkdir -p ~/.lmstudio/models/bartowski/Llama-3.2-3B-Instruct-GGUF
+          hf download bartowski/Llama-3.2-3B-Instruct-GGUF \
+            --include "Llama-3.2-3B-Instruct-Q4_K_M.gguf" \
+            --local-dir ~/.lmstudio/models/bartowski/Llama-3.2-3B-Instruct-GGUF
           echo "✅ Model 2 selesai"
           df -h / | tail -1
-
-      - name: Download Model 3 - Llama-3.2 3B (1.9GB)
+      
+      - name: Download Model 3 - Qwen2.5 3B (2.0GB)
         run: |
-          mkdir -p ~/.lmstudio/models/meta-llama/Llama-3.2-3B-Instruct-GGUF
-          hf download \
-            meta-llama/Llama-3.2-3B-Instruct-GGUF \
-            llama-3.2-3b-instruct-q4_k_m.gguf \
-            --local-dir ~/.lmstudio/models/meta-llama/Llama-3.2-3B-Instruct-GGUF
+          mkdir -p ~/.lmstudio/models/bartowski/Qwen2.5-3B-Instruct-GGUF
+          hf download bartowski/Qwen2.5-3B-Instruct-GGUF \
+            --include "Qwen2.5-3B-Instruct-Q4_K_M.gguf" \
+            --local-dir ~/.lmstudio/models/bartowski/Qwen2.5-3B-Instruct-GGUF
           echo "✅ Model 3 selesai"
           df -h / | tail -1
-
-      - name: Download Model 4 - Gemma-2 2B (1.6GB)
+      
+      - name: Download Model 4 - Llama-3.2 1B (0.74GB)
         run: |
-          mkdir -p ~/.lmstudio/models/google/gemma-2-2b-it-GGUF
-          hf download \
-            google/gemma-2-2b-it-GGUF \
-            gemma-2-2b-it-Q4_K_M.gguf \
-            --local-dir ~/.lmstudio/models/google/gemma-2-2b-it-GGUF
+          mkdir -p ~/.lmstudio/models/bartowski/Llama-3.2-1B-Instruct-GGUF
+          hf download bartowski/Llama-3.2-1B-Instruct-GGUF \
+            --include "Llama-3.2-1B-Instruct-Q4_K_M.gguf" \
+            --local-dir ~/.lmstudio/models/bartowski/Llama-3.2-1B-Instruct-GGUF
           echo "✅ Model 4 selesai"
           df -h / | tail -1
-
+      
       - name: Download Model 5 - Qwen2.5 0.5B (0.4GB)
         run: |
-          mkdir -p ~/.lmstudio/models/Qwen/Qwen2.5-0.5B-Instruct-GGUF
-          hf download \
-            Qwen/Qwen2.5-0.5B-Instruct-GGUF \
-            qwen2.5-0.5b-instruct-q4_k_m.gguf \
-            --local-dir ~/.lmstudio/models/Qwen/Qwen2.5-0.5B-Instruct-GGUF
+          mkdir -p ~/.lmstudio/models/bartowski/Qwen2.5-0.5B-Instruct-GGUF
+          hf download bartowski/Qwen2.5-0.5B-Instruct-GGUF \
+            --include "Qwen2.5-0.5B-Instruct-Q4_K_M.gguf" \
+            --local-dir ~/.lmstudio/models/bartowski/Qwen2.5-0.5B-Instruct-GGUF
           echo "✅ Model 5 selesai"
           df -h / | tail -1
-
-      # ── Cek disk setelah download ────────────────────────────
-      - name: Check disk after download
+      
+      - name: Cek disk & semua model
         run: |
-          echo "=== Disk setelah download ==="
+          echo "=== Disk usage ==="
           df -h /
           echo ""
           echo "=== Semua model ==="
-          du -sh ~/.lmstudio/models/*/* 2>/dev/null
+          du -sh ~/.lmstudio/models/*/*/*.gguf 2>/dev/null
           echo ""
-          du -sh ~/.lmstudio/models/ 2>/dev/null
-
+          du -sh ~/.lmstudio/models/
       # ── Start LM Studio ──────────────────────────────────────
       - name: Start llmster daemon
         run: |
