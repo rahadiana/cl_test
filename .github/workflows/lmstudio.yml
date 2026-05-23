@@ -1,0 +1,111 @@
+name: LM Studio + Tunnel
+on: [push]
+
+jobs:
+  lmstudio-tunnel:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # ── Install LM Studio (llmster) ──────────────────────────
+      - name: Install LM Studio
+        run: |
+          curl -fsSL https://lmstudio.ai/install.sh | bash
+          echo "$HOME/.lmstudio/bin" >> $GITHUB_PATH
+
+      - name: Verify lms CLI
+        run: |
+          export PATH="$PATH:$HOME/.lmstudio/bin"
+          lms --version || lms version || true
+
+      # ── Start llmster daemon ─────────────────────────────────
+      - name: Start llmster daemon
+        run: |
+          export PATH="$PATH:$HOME/.lmstudio/bin"
+          lms daemon up &
+          sleep 5
+          echo "=== daemon status ==="
+          lms status || true
+
+      # ── Start LM Studio API server (port 1234) ───────────────
+      - name: Start LM Studio server
+        run: |
+          export PATH="$PATH:$HOME/.lmstudio/bin"
+          lms server start
+          sleep 3
+          echo "=== server status ==="
+          lms server status || true
+
+      # ── (Opsional) Download model kecil untuk test ───────────
+      # Uncomment kalau mau download model — butuh ~2GB storage
+      # - name: Download small model
+      #   run: |
+      #     export PATH="$PATH:$HOME/.lmstudio/bin"
+      #     lms get lmstudio/qwen2.5-0.5b-instruct-mlx --yes || true
+
+      # ── Verify API jalan di port 1234 ───────────────────────
+      - name: Wait for LM Studio API ready
+        run: |
+          echo "Menunggu LM Studio API di port 1234..."
+          for i in {1..20}; do
+            if curl -sf http://localhost:1234/v1/models > /dev/null 2>&1; then
+              echo "✅ LM Studio API ready!"
+              curl -s http://localhost:1234/v1/models | head -c 300
+              break
+            fi
+            echo "Waiting... ($i/20)"
+            sleep 3
+          done
+
+      # ── Install cloudflared ──────────────────────────────────
+      - name: Install cloudflared
+        run: |
+          wget -q https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64.deb
+          sudo dpkg -i cloudflared-linux-amd64.deb
+
+      # ── Tunnel ke LM Studio port 1234 ───────────────────────
+      - name: Start Cloudflare Tunnel
+        run: |
+          cloudflared tunnel --url http://localhost:1234 \
+            --no-autoupdate \
+            --logfile /tmp/cloudflared.log &
+
+          TUNNEL_URL=""
+          for i in {1..30}; do
+            TUNNEL_URL=$(grep -o 'https://[a-z0-9-]*\.trycloudflare\.com' /tmp/cloudflared.log 2>/dev/null | head -1)
+            if [ -n "$TUNNEL_URL" ]; then
+              echo "✅ Tunnel ready!"
+              break
+            fi
+            echo "Waiting for URL... ($i/30)"
+            sleep 3
+          done
+
+          echo "========================================"
+          echo "🌐 LM Studio URL : $TUNNEL_URL"
+          echo "📡 API Endpoint  : $TUNNEL_URL/v1"
+          echo "📋 List Models   : $TUNNEL_URL/v1/models"
+          echo "========================================"
+          echo "TUNNEL_URL=$TUNNEL_URL" >> $GITHUB_ENV
+
+      # ── Keep alive ───────────────────────────────────────────
+      - name: Keep alive (15 menit)
+        run: |
+          echo "🚀 LM Studio aktif di: $TUNNEL_URL"
+          echo ""
+          echo "Pakai di opencode / Claude Code / Cursor:"
+          echo "  Base URL : $TUNNEL_URL/v1"
+          echo "  API Key  : lm-studio (atau apa saja)"
+          echo "  Model    : (lihat $TUNNEL_URL/v1/models)"
+          echo ""
+          echo "Tekan Cancel workflow untuk stop."
+          for i in 1 2 3; do
+            sleep 300
+            echo "⏱️ Menit ke-$((i*5)) — aktif: $TUNNEL_URL"
+            curl -sf http://localhost:1234/v1/models > /dev/null && \
+              echo "  ✅ LM Studio: OK" || \
+              echo "  ❌ LM Studio: DOWN"
+          done
