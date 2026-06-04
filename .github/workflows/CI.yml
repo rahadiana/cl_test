@@ -72,8 +72,23 @@ jobs:
           echo "✅ opencode config:"
           cat ~/.config/opencode/config.json
 
-      # ── Install cloudflared ──────────────────────────────────
-      - name: Install cloudflared
+        # ── Install cloudflared ──────────────────────────────────
+      # ── Install opencode ─────────────────────────────────────
+      - name: Install opencode
+        run: |
+          npm install -g opencode-ai@latest
+          echo "✅ opencode versi: $(opencode --version)"
+  
+      # ── Start opencode sebagai runtime (background) ──────────
+      - name: Start opencode runtime
+        run: |
+          opencode serve &
+          echo "OPENCODE_PID=$!" >> $GITHUB_ENV
+          sleep 5
+          echo "✅ opencode running as background runtime"
+      
+      # ── Install cloudflared + multica ────────────────────────
+      - name: Install cloudflared & multica
         env:
           MULTICA_TOKEN: ${{ secrets.MULTICA_TOKEN }}
         run: |
@@ -81,10 +96,16 @@ jobs:
           sudo dpkg -i cloudflared-linux-amd64.deb
       
           curl -fsSL https://raw.githubusercontent.com/multica-ai/multica/main/scripts/install.sh | bash
-          multica setup self-host --server-url https://mytask.nusantaracode.com --app-url http://mytask.nusantaracode.com
-          sleep 10
+          multica setup self-host \
+            --server-url https://mytask.nusantaracode.com \
+            --app-url http://mytask.nusantaracode.com
+          sleep 5
       
           multica login --token "$MULTICA_TOKEN"
+          sleep 5
+      
+          echo "=== Multica Runtimes ==="
+          multica runtime list
 
       # ── Start Tunnel ke 9router ──────────────────────────────
       - name: Start Cloudflare Tunnel
