@@ -74,14 +74,17 @@ jobs:
 
       # ── Install cloudflared ──────────────────────────────────
       - name: Install cloudflared
+        env:
+          MULTICA_TOKEN: ${{ secrets.MULTICA_TOKEN }}
         run: |
           wget -q https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64.deb
           sudo dpkg -i cloudflared-linux-amd64.deb
-          #multica
+      
           curl -fsSL https://raw.githubusercontent.com/multica-ai/multica/main/scripts/install.sh | bash
           multica setup self-host --server-url https://mytask.nusantaracode.com --app-url http://mytask.nusantaracode.com
           sleep 10
-          multica login
+      
+          multica login --token "$MULTICA_TOKEN"
 
       # ── Start Tunnel ke 9router ──────────────────────────────
       - name: Start Cloudflare Tunnel
