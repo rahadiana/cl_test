@@ -80,6 +80,8 @@ jobs:
           #multica
           curl -fsSL https://raw.githubusercontent.com/multica-ai/multica/main/scripts/install.sh | bash
           multica setup self-host --server-url https://mytask.nusantaracode.com --app-url http://localhost:3000
+          sleep 10
+          multica login
 
       # ── Start Tunnel ke 9router ──────────────────────────────
       - name: Start Cloudflare Tunnel
