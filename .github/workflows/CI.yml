@@ -79,7 +79,7 @@ jobs:
           sudo dpkg -i cloudflared-linux-amd64.deb
           #multica
           curl -fsSL https://raw.githubusercontent.com/multica-ai/multica/main/scripts/install.sh | bash
-          multica setup self-host --server-url https://mytask.nusantaracode.com --app-url http://localhost:3000
+          multica setup self-host --server-url https://mytask.nusantaracode.com --app-url http://mytask.nusantaracode.com
           sleep 10
           multica login
 
