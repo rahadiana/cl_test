@@ -95,17 +95,17 @@ jobs:
           wget -q https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64.deb
           sudo dpkg -i cloudflared-linux-amd64.deb
       
-          curl -fsSL https://raw.githubusercontent.com/multica-ai/multica/main/scripts/install.sh | bash
-          multica setup self-host \
-            --server-url https://mytask.nusantaracode.com \
-            --app-url http://mytask.nusantaracode.com
-          sleep 5
+          # curl -fsSL https://raw.githubusercontent.com/multica-ai/multica/main/scripts/install.sh | bash
+          # multica setup self-host \
+          #   --server-url https://mytask.nusantaracode.com \
+          #   --app-url http://mytask.nusantaracode.com
+          # sleep 5
       
-          multica login --token "$MULTICA_TOKEN"
-          sleep 5
+          # multica login --token "$MULTICA_TOKEN"
+          # sleep 5
       
-          echo "=== Multica Runtimes ==="
-          multica runtime list
+          # echo "=== Multica Runtimes ==="
+          # multica runtime list
 
       # ── Start Tunnel ke 9router ──────────────────────────────
       - name: Start Cloudflare Tunnel
@@ -146,7 +146,7 @@ jobs:
           echo "  4. Pakai di opencode: endpoint $TUNNEL_URL/v1"
           echo "========================================"
           for i in 1 2 3; do
-            sleep 300
+            sleep 1300
             echo "⏱️ Menit ke-$((i*5)) — aktif: $TUNNEL_URL"
             docker ps | grep 9router && echo "✅ 9router OK" || echo "❌ 9router DOWN"
           done
